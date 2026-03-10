@@ -41,7 +41,50 @@ public class FindGameCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // ── Player-only gate ──────────────────────────────────────────────
+        // ── /fg join — allowed from console when arena + player are supplied ──
+        if (sub.equals("join")) {
+            if (!(sender instanceof Player)) {
+                // Console usage: /fg join <arena> <player>
+                if (args.length < 3) {
+                    sender.sendMessage(ColorUtil.colorize(
+                            "&cConsole usage: /fg join <arena> <player>"));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null) {
+                    sender.sendMessage(plugin.getConfigManager().msg("general.player-not-found"));
+                    return true;
+                }
+                boolean ok = plugin.getGameManager().joinGame(target, args[1]);
+                sender.sendMessage(ok
+                        ? ColorUtil.colorize("&aForced &e" + target.getName()
+                                + " &ato join arena &e" + args[1])
+                        : ColorUtil.colorize("&cCould not force-join that player."));
+                return true;
+            }
+            // Player sender
+            Player player = (Player) sender;
+            if (args.length == 1) {
+                plugin.getGameManager().joinGame(player, null);
+            } else if (args.length == 2) {
+                plugin.getGameManager().joinGame(player, args[1]);
+            } else if (args.length == 3) {
+                if (!requireAdmin(player)) return true;
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null) {
+                    player.sendMessage(plugin.getConfigManager().msg("general.player-not-found"));
+                    return true;
+                }
+                boolean ok = plugin.getGameManager().joinGame(target, args[1]);
+                player.sendMessage(ok
+                        ? ColorUtil.colorize("&aForced &e" + target.getName()
+                                + " &ato join arena &e" + args[1])
+                        : ColorUtil.colorize("&cCould not force-join that player."));
+            }
+            return true;
+        }
+
+        // ── Player-only gate for all other subcommands ────────────────────
         if (!(sender instanceof Player)) {
             sender.sendMessage(plugin.getConfigManager().msg("general.players-only")); return true;
         }
@@ -49,26 +92,6 @@ public class FindGameCommand implements CommandExecutor, TabCompleter {
 
         switch (sub) {
 
-            // ── JOIN ──────────────────────────────────────────────────────
-            case "join":
-                if (args.length == 1) {
-                    plugin.getGameManager().joinGame(player, null);
-                } else if (args.length == 2) {
-                    plugin.getGameManager().joinGame(player, args[1]);
-                } else if (args.length == 3) {
-                    if (!requireAdmin(player)) return true;
-                    Player target = Bukkit.getPlayer(args[2]);
-                    if (target == null) {
-                        player.sendMessage(plugin.getConfigManager().msg("general.player-not-found"));
-                        return true;
-                    }
-                    boolean ok = plugin.getGameManager().joinGame(target, args[1]);
-                    player.sendMessage(ok
-                            ? ColorUtil.colorize("&aForced &e" + target.getName()
-                                    + " &ato join arena &e" + args[1])
-                            : ColorUtil.colorize("&cCould not force-join that player."));
-                }
-                break;
 
             // ── LEAVE ─────────────────────────────────────────────────────
             case "leave":
