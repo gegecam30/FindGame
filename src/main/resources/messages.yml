@@ -17,34 +17,62 @@
 prefix: ""
 
 # ------------------------------------------------------------
+# NPC NAMES
+# Assigned randomly to each NPC spawned in a round.
+# No two NPCs in the same round will share a name (if list is
+# large enough). Supports color codes.
+# ------------------------------------------------------------
+npc-names:
+  - "&fAlice"
+  - "&fBob"
+  - "&fCarlos"
+  - "&fDiana"
+  - "&fEthan"
+  - "&fFiona"
+  - "&fGeorge"
+  - "&fHanna"
+  - "&fIvan"
+  - "&fJulia"
+  - "&fKevin"
+  - "&fLena"
+  - "&fMarco"
+  - "&fNora"
+  - "&fOscar"
+  - "&fPaula"
+  - "&fQuinn"
+  - "&fRosa"
+  - "&fSam"
+  - "&fTara"
+
+# ------------------------------------------------------------
 # GENERAL
 # ------------------------------------------------------------
 general:
-  no-permission:   "{#DC143C}⚠ You do not have permission to run this command."
-  players-only:    "{#DC143C}This command can only be run by a player."
+  no-permission:    "{#DC143C}⚠ You do not have permission to run this command."
+  players-only:     "{#DC143C}This command can only be run by a player."
   player-not-found: "{#DC143C}Player not found."
-  reload-success:  "{#00FF00}✔ Configuration reloaded successfully."
+  reload-success:   "{#00FF00}✔ Configuration reloaded successfully."
 
 # ------------------------------------------------------------
 # GAME — FLOW
 # ------------------------------------------------------------
 game:
-  joined:       "{#32CD32}You have entered the investigation zone."
-  left:         "{#FF4500}You have left the investigation."
-  already-in:   "{#DC143C}You are already inside a game!"
-  not-in:       "{#DC143C}You are not currently in a game."
+  joined:      "{#32CD32}You have entered the investigation zone."
+  left:        "{#FF4500}You have left the investigation."
+  already-in:  "{#DC143C}You are already inside a game!"
+  not-in:      "{#DC143C}You are not currently in a game."
 
   # {level}
-  start:        "{#00FFFF}The hunt begins! {#E0E0E0}Level: {#FFD700}{level}"
+  start:       "{#00FFFF}The hunt begins! {#E0E0E0}Level: {#FFD700}{level}"
 
   # Results
-  win:          "{#32CD32}✔ Correct! You eliminated the impostor."
-  lose:         "{#DC143C}✘ Wrong! That was an innocent villager."
-  win-bonus:    "{#FFD700}&lAMAZING! {#FFFFE0}Your speed earned you a bonus reward! 🎉"
+  win:         "{#32CD32}✔ Correct! You eliminated the impostor."
+  lose:        "{#DC143C}✘ Wrong! That was an innocent villager."
+  win-bonus:   "{#FFD700}&lAMAZING! {#FFFFE0}Your speed earned you a bonus reward! 🎉"
 
   # Lives — {lives}
-  life-lost:    "{#FF8C00}You hit an innocent! {#DC143C}{lives} lives remaining."
-  game-over:    "{#8B0000}&lMISSION FAILED! {#E0E0E0}You ran out of lives."
+  life-lost:   "{#FF8C00}You hit an innocent! {#DC143C}{lives} lives remaining."
+  game-over:   "{#8B0000}&lMISSION FAILED! {#E0E0E0}You ran out of lives."
 
   # Boundary
   out-of-bounds: "{#FF4500}⚠ You cannot leave the arena boundary!"
@@ -57,9 +85,8 @@ game:
 # ------------------------------------------------------------
 titles:
   # {level}
-  level-title:    "{#DC143C}&lLEVEL {level}"
-  level-subtitle: "{#E0E0E0}Find the {#DC143C}&lIMPOSTOR"
-
+  level-title:     "{#DC143C}&lLEVEL {level}"
+  level-subtitle:  "{#E0E0E0}Find the {#DC143C}&lIMPOSTOR"
   game-over-title: "{#8B0000}&lMISSION FAILED"
 
 # ------------------------------------------------------------
@@ -67,12 +94,11 @@ titles:
 # ------------------------------------------------------------
 observation:
   # {seconds}
-  start:      "{#00BFFF}👁 Observation phase: {#FFFFFF}{seconds}s {#B0B0B0}— Study the suspects carefully."
-  subtitle:   "{#00FFFF}Observe carefully... don't move!"
-  no-attack:  "{#FF4500}⚠ You cannot attack during the observation phase."
-
+  start:     "{#00BFFF}👁 Observation phase: {#FFFFFF}{seconds}s {#B0B0B0}— Study the suspects carefully."
+  subtitle:  "{#00FFFF}Observe carefully... don't move!"
+  no-attack: "{#FF4500}⚠ You cannot attack during the observation phase."
   # BossBar — {time}
-  bossbar:    "{#00BFFF}👁 Observation: &f{time}s"
+  bossbar:   "{#00BFFF}👁 Observation: &f{time}s"
 
 # ------------------------------------------------------------
 # HUNT PHASE
@@ -83,18 +109,23 @@ hunt:
 
 # ------------------------------------------------------------
 # IMPOSTOR HINTS
-# {type} is replaced by the impostor-type display name below.
+# {type} is replaced by the type display name below.
 # ------------------------------------------------------------
 impostor:
   hint: "{#B0B0B0}Hint: The suspect seems to be... {#00FFFF}{type}"
 
-  # Display names for each ImpostorType enum value.
-  # Key must match the enum name in lowercase.
+  # Key must match ImpostorType enum name in lowercase.
   type-names:
+    # Original
     nervous:     "The Nervous One"
     killer:      "The Killer"
     shy:         "The Shy One"
     speedrunner: "The Speedster"
+    # New
+    drunk:       "The Drunkard"
+    paranoid:    "The Paranoid One"
+    assassin:    "The Assassin"
+    freezer:     "The Statue"
 
 # ------------------------------------------------------------
 # ARENA MANAGEMENT  (admin messages)
@@ -107,10 +138,8 @@ arena:
   not-found:      "{#DC143C}Error: Arena '{name}' does not exist."
   spawn-set:      "{#32CD32}Player spawn set for arena '{name}'."
   saved:          "{#00FFFF}Arenas saved to disk."
-
   # {name}, {radius}
   radius-set:     "{#32CD32}Boundary radius for '{name}' set to {#FFD700}{radius} blocks{#32CD32}."
-
   # List
   list-header:    "{#00FFFF}=== Configured Arenas ==="
   # {name}, {info}
@@ -132,7 +161,6 @@ wand:
   lore:
     - "{#B0B0B0}Left-click a block  → set player spawn"
     - "{#B0B0B0}Right-click a block → add NPC spawn point"
-
   # {name}
   spawn-set: "{#32CD32}Player spawn set in arena '{name}'."
   # {number}, {name}
@@ -144,14 +172,13 @@ wand:
 # STATISTICS
 # ------------------------------------------------------------
 stats:
-  header:   "{#00FFFF}&lPLAYER DOSSIER"
+  header:     "{#00FFFF}&lPLAYER DOSSIER"
   # {played}
-  played:   "{#E0E0E0}Cases played:     {#00FFFF}{played}"
+  played:     "{#E0E0E0}Cases played:     {#00FFFF}{played}"
   # {won}
-  won:      "{#E0E0E0}Impostors found:  {#32CD32}{won}"
+  won:        "{#E0E0E0}Impostors found:  {#32CD32}{won}"
   # {winrate}
-  winrate:  "{#E0E0E0}Efficiency:       {#FFD700}{winrate}%"
-
+  winrate:    "{#E0E0E0}Efficiency:       {#FFD700}{winrate}%"
   top-header: "{#FFD700}&lTOP 10 BEST DETECTIVES"
   # {position}, {player}, {wins}
   top-line:   "{#FFD700}#{position} {#E0E0E0}{player} — {#32CD32}{wins} wins"
@@ -165,10 +192,9 @@ help:
   leave:        "{#FFD700}/fg leave {#B0B0B0}— Leave your current game"
   stats:        "{#FFD700}/fg stats {#B0B0B0}— View your statistics"
   top:          "{#FFD700}/fg top {#B0B0B0}— View the detective leaderboard"
-
   admin-header: "{#FF4500}&m========&r {#DC143C}ADMIN COMMANDS {#FF4500}&m========"
-  create:       "{#FFA500}/fg create <name> {#B0B0B0}— Create a new arena"
-  delete:       "{#FFA500}/fg delete <name> {#B0B0B0}— Delete an arena"
+  create:       "{#FFA500}/fg create <n> {#B0B0B0}— Create a new arena"
+  delete:       "{#FFA500}/fg delete <n> {#B0B0B0}— Delete an arena"
   setspawn:     "{#FFA500}/fg setspawn <arena> {#B0B0B0}— Set player spawn point"
   setradius:    "{#FFA500}/fg setradius <arena> <radius> {#B0B0B0}— Set boundary radius"
   setlobby:     "{#FFA500}/fg setlobby {#B0B0B0}— Set global lobby location"
