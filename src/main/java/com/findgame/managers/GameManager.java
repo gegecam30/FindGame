@@ -14,6 +14,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
@@ -22,16 +23,20 @@ public class GameManager {
 
     private final FindGamePlugin plugin;
 
-    // Estado de partida
-    private final Set<UUID> activePlayers       = new HashSet<>();
-    private final Map<UUID, Integer>  playerLevels  = new HashMap<>();
-    private final Map<UUID, Integer>  playerLives   = new HashMap<>();
-    private final Map<UUID, BossBar>  activeBars    = new HashMap<>();
-    private final Map<UUID, BukkitTask> timerTasks  = new HashMap<>();
-    private final Map<UUID, Arena>    playerArenas  = new HashMap<>();
+    private final Set<UUID>           activePlayers     = new HashSet<>();
+    private final Map<UUID, Integer>  playerLevels      = new HashMap<>();
+    private final Map<UUID, Integer>  playerLives       = new HashMap<>();
+    private final Map<UUID, BossBar>  activeBars        = new HashMap<>();
+    private final Map<UUID, BukkitTask> timerTasks      = new HashMap<>();
+    private final Map<UUID, Arena>    playerArenas      = new HashMap<>();
+    private final Set<UUID>           inObservation     = new HashSet<>();
 
-    // ✅ NUEVO: jugadores en fase de observación (no pueden atacar ni moverse libremente)
-    private final Set<UUID> inObservationPhase = new HashSet<>();
+    /** Compatible helper — SLOWNESS was SLOW before 1.20.5 */
+    private static final PotionEffectType SLOWNESS;
+    static {
+        PotionEffectType t = PotionEffectType.getByName("SLOWNESS");
+        SLOWNESS = (t != null) ? t : PotionEffectType.getByName("SLOW");
+    }
 
     public GameManager(FindGamePlugin plugin) {
         this.plugin = plugin;
@@ -45,7 +50,7 @@ public class GameManager {
         UUID uuid = player.getUniqueId();
 
         if (activePlayers.contains(uuid)) {
-            player.sendMessage(plugin.getConfigManager().getMessage("already-playing"));
+            player.sendMessage(plugin.getConfigManager().msg("game.already-in"));
             return false;
         }
 
@@ -54,7 +59,8 @@ public class GameManager {
                 : plugin.getArenaManager().getRandomArena();
 
         if (arena == null || !arena.isComplete()) {
-            player.sendMessage(plugin.getConfigManager().getMessage("arena-not-found"));
+            player.sendMessage(plugin.getConfigManager().msg("arena.not-found",
+                    "name", arenaName != null ? arenaName : "?"));
             return false;
         }
 
@@ -64,14 +70,9 @@ public class GameManager {
         playerArenas.put(uuid, arena);
 
         plugin.getStatsManager().addGamePlayed(uuid);
+        applyPlayingGameMode(player);
 
-        if (plugin.getConfig().getBoolean("settings.gamemode-management", true)) {
-            String modeName = plugin.getConfig().getString("settings.gamemode-playing", "ADVENTURE");
-            try { player.setGameMode(GameMode.valueOf(modeName)); }
-            catch (IllegalArgumentException e) { player.setGameMode(GameMode.ADVENTURE); }
-        }
-
-        player.sendMessage(plugin.getConfigManager().getMessage("game-joined"));
+        player.sendMessage(plugin.getConfigManager().msg("game.joined"));
         startRound(player, arena, true);
         return true;
     }
@@ -80,79 +81,53 @@ public class GameManager {
     // ROUND
     // =========================================================
 
-    /**
-     * @param teleportPlayer true solo en la primera ronda.
-     */
-    private void startRound(Player player, Arena arena, boolean teleportPlayer) {
+    private void startRound(Player player, Arena arena, boolean teleport) {
         if (!isPlaying(player)) return;
+        if (teleport) player.teleport(arena.getPlayerSpawn());
 
-        UUID uuid = player.getUniqueId();
-        int level = playerLevels.getOrDefault(uuid, 1);
-
-        if (teleportPlayer) {
-            player.teleport(arena.getPlayerSpawn());
-        }
-
-        // ✅ NUEVO: Fase de observación antes de que el juego empiece
-        int obsDuration = plugin.getConfig().getInt("settings.observation-phase", 5);
-        startObservationPhase(player, arena, level, obsDuration);
+        int level = playerLevels.getOrDefault(player.getUniqueId(), 1);
+        int obsSecs = plugin.getConfig().getInt("settings.observation-phase", 7);
+        startObservationPhase(player, arena, level, obsSecs);
     }
 
     // =========================================================
-    // ✅ NUEVO: FASE DE OBSERVACIÓN
+    // OBSERVATION PHASE
     // =========================================================
 
-    /**
-     * Aplica slowness + night-vision para simular "zoom de análisis".
-     * El jugador no puede atacar durante este tiempo (chequeado en processGuess).
-     * Al terminar, arranca el round normal con timer.
-     */
     private void startObservationPhase(Player player, Arena arena, int level, int durationSeconds) {
         UUID uuid = player.getUniqueId();
-        inObservationPhase.add(uuid);
+        inObservation.add(uuid);
 
-        // Spawn NPCs ahora para que el jugador pueda observarlos
-        int npcCount = 3 + level;
-        plugin.getNpcManager().spawnNPCs(arena, player, npcCount);
+        // Spawn NPCs immediately so the player can study them
+        plugin.getNpcManager().spawnNPCs(arena, player, 3 + level);
 
-        // Efectos visuales de la fase de observación
-        int ticks = durationSeconds * 20 + 10; // +10 por margen
-
-        // Slowness IV = casi sin movimiento (simula zoom)
-        // SLOW fue renombrado a SLOWNESS en Paper 1.20.5+; usamos getByName para compatibilidad
-        PotionEffectType slowType = PotionEffectType.getByName("SLOWNESS") != null
-                ? PotionEffectType.getByName("SLOWNESS")
-                : PotionEffectType.getByName("SLOW");
+        int ticks = durationSeconds * 20 + 10;
+        if (SLOWNESS != null) {
+            player.addPotionEffect(new PotionEffect(SLOWNESS, ticks, 4, false, false, false));
+        }
         player.addPotionEffect(new PotionEffect(
-                slowType, ticks, 4, false, false, false));
+                PotionEffectType.NIGHT_VISION, ticks, 0, false, false, false));
 
-        // Night Vision para ver bien los aldeanos
-        player.addPotionEffect(new PotionEffect(
-                PotionEffectType.NIGHT_VISION,
-                ticks, 0, false, false, false));
+        // Titles
+        player.sendTitle(
+                plugin.getConfigManager().msg("titles.level-title", false, "level", String.valueOf(level)),
+                plugin.getConfigManager().msg("observation.subtitle", false),
+                10, 60, 10);
 
-        // Título de la fase
-        String title    = plugin.getConfigManager().getMessageWithPlaceholders(
-                "level-title", "level", String.valueOf(level));
-        String subtitle = plugin.getConfigManager().getMessage("obs-subtitle");
-        player.sendTitle(title, subtitle, 10, 60, 10);
-
-        player.sendMessage(plugin.getConfigManager().getMessageWithPlaceholders(
-                "obs-start", "seconds", String.valueOf(durationSeconds)));
+        player.sendMessage(plugin.getConfigManager().msg("observation.start",
+                "seconds", String.valueOf(durationSeconds)));
 
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
 
-        // BossBar de cuenta regresiva de observación
-        String obsBarFormat = plugin.getConfig().getString(
-                "messages.obs-bossbar-text", "&bObservation Phase: &f{time}s");
+        // Observation BossBar
+        String obsFormat = plugin.getConfigManager().msg("observation.bossbar", false);
         BossBar obsBar = Bukkit.createBossBar(
-                ColorUtil.colorize(obsBarFormat.replace("{time}", String.valueOf(durationSeconds))),
+                ColorUtil.colorize(obsFormat.replace("{time}", String.valueOf(durationSeconds))),
                 BarColor.BLUE, BarStyle.SEGMENTED_6);
         obsBar.addPlayer(player);
         activeBars.put(uuid, obsBar);
 
-        // Countdown y transición al juego
-        BukkitTask obsTask = new org.bukkit.scheduler.BukkitRunnable() {
+        BukkitTask obsTask = new BukkitRunnable() {
             int timeLeft = durationSeconds;
 
             @Override
@@ -160,7 +135,7 @@ public class GameManager {
                 if (!isPlaying(player)) {
                     obsBar.removeAll();
                     activeBars.remove(uuid);
-                    inObservationPhase.remove(uuid);
+                    inObservation.remove(uuid);
                     this.cancel();
                     return;
                 }
@@ -170,52 +145,40 @@ public class GameManager {
                 BossBar bar = activeBars.get(uuid);
                 if (bar != null) {
                     bar.setTitle(ColorUtil.colorize(
-                            obsBarFormat.replace("{time}", String.valueOf(timeLeft))));
+                            obsFormat.replace("{time}", String.valueOf(timeLeft))));
                     bar.setProgress(Math.max(0.0, (double) timeLeft / durationSeconds));
                 }
 
                 if (timeLeft <= 3 && timeLeft > 0) {
-                    player.playSound(player.getLocation(),
-                            Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1f);
+                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1f);
                     player.sendTitle("", ColorUtil.colorize("&e" + timeLeft + "..."), 0, 25, 5);
                 }
 
                 if (timeLeft <= 0) {
                     if (bar != null) { bar.removeAll(); activeBars.remove(uuid); }
-                    inObservationPhase.remove(uuid);
+                    inObservation.remove(uuid);
                     this.cancel();
-
-                    // Quitar efectos y arrancar ronda real
-                    player.removePotionEffect(slowType);
-                    player.removePotionEffect(PotionEffectType.NIGHT_VISION);
-
+                    clearObservationEffects(player);
                     beginHuntPhase(player, arena, level);
                 }
             }
         }.runTaskTimer(plugin, 20L, 20L);
 
-        timerTasks.put(uuid, obsTask); // guardamos para poder cancelar si sale
+        timerTasks.put(uuid, obsTask);
     }
 
-    /**
-     * Arranca la fase de caza real (BossBar amarilla + timer de juego).
-     */
     private void beginHuntPhase(Player player, Arena arena, int level) {
         if (!isPlaying(player)) return;
 
-        // Título de ¡A JUGAR!
-        String huntTitle    = plugin.getConfigManager().getMessageWithPlaceholders(
-                "level-title", "level", String.valueOf(level));
-        String huntSubtitle = plugin.getConfigManager().getMessage("level-subtitle");
-        player.sendTitle(huntTitle, huntSubtitle, 5, 40, 10);
+        player.sendTitle(
+                plugin.getConfigManager().msg("titles.level-title",   false, "level", String.valueOf(level)),
+                plugin.getConfigManager().msg("titles.level-subtitle", false),
+                5, 40, 10);
 
-        player.sendMessage(plugin.getConfigManager().getMessageWithPlaceholders(
-                "game-start", "level", String.valueOf(level)));
-
+        player.sendMessage(plugin.getConfigManager().msg("game.start", "level", String.valueOf(level)));
         player.playSound(player.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.5f, 1.5f);
 
-        int time = 30 + (level * 2);
-        startTimer(player, time);
+        startHuntTimer(player, 30 + (level * 2));
     }
 
     // =========================================================
@@ -225,9 +188,8 @@ public class GameManager {
     public void processGuess(Player player, Entity target) {
         if (!isPlaying(player)) return;
 
-        // ✅ NUEVO: Bloquear golpes durante observación
-        if (inObservationPhase.contains(player.getUniqueId())) {
-            player.sendMessage(plugin.getConfigManager().getMessage("obs-no-attack"));
+        if (inObservation.contains(player.getUniqueId())) {
+            player.sendMessage(plugin.getConfigManager().msg("observation.no-attack"));
             return;
         }
 
@@ -240,9 +202,9 @@ public class GameManager {
 
     private void handleVictory(Player player) {
         stopTimer(player);
-        inObservationPhase.remove(player.getUniqueId());
+        inObservation.remove(player.getUniqueId());
 
-        player.sendMessage(plugin.getConfigManager().getMessage("game-win"));
+        player.sendMessage(plugin.getConfigManager().msg("game.win"));
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.5f);
 
         plugin.getRewardManager().giveWinRewards(player);
@@ -256,31 +218,33 @@ public class GameManager {
 
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (isPlaying(player)) {
-                Arena currentArena = playerArenas.get(player.getUniqueId());
-                if (currentArena != null) startRound(player, currentArena, false);
+                Arena arena = playerArenas.get(player.getUniqueId());
+                if (arena != null) startRound(player, arena, false);
             }
         }, 40L);
     }
 
     private void handleDefeat(Player player, Entity innocentEntity) {
         UUID uuid = player.getUniqueId();
-        inObservationPhase.remove(uuid);
+        inObservation.remove(uuid);
 
-        int currentLives = playerLives.getOrDefault(uuid, 1) - 1;
-        playerLives.put(uuid, currentLives);
+        int lives = playerLives.getOrDefault(uuid, 1) - 1;
+        playerLives.put(uuid, lives);
 
         if (innocentEntity != null) {
             innocentEntity.remove();
             player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
         }
 
-        if (currentLives <= 0) {
-            player.sendMessage(plugin.getConfigManager().getMessage("game-over"));
-            player.sendTitle(plugin.getConfigManager().getMessage("game-over"), "", 10, 60, 20);
+        if (lives <= 0) {
+            player.sendMessage(plugin.getConfigManager().msg("game.game-over"));
+            player.sendTitle(
+                    plugin.getConfigManager().msg("titles.game-over-title", false),
+                    "", 10, 60, 20);
             leaveGame(player);
         } else {
-            player.sendMessage(plugin.getConfigManager().getMessageWithPlaceholders(
-                    "game-life-lost", "lives", String.valueOf(currentLives)));
+            player.sendMessage(plugin.getConfigManager().msg("game.life-lost",
+                    "lives", String.valueOf(lives)));
             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1f, 1f);
 
             if (innocentEntity == null) {
@@ -288,8 +252,8 @@ public class GameManager {
                 plugin.getNpcManager().cleanup(player);
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     if (isPlaying(player)) {
-                        Arena currentArena = playerArenas.get(player.getUniqueId());
-                        if (currentArena != null) startRound(player, currentArena, false);
+                        Arena arena = playerArenas.get(player.getUniqueId());
+                        if (arena != null) startRound(player, arena, false);
                     }
                 }, 20L);
             }
@@ -297,81 +261,69 @@ public class GameManager {
     }
 
     // =========================================================
-    // ✅ NUEVO: RADIO - verificar si el jugador salió del límite
+    // RADIUS CHECK
     // =========================================================
 
-    /**
-     * Llamado desde GameListener en PlayerMoveEvent.
-     * Si el jugador sale del radio, se le empuja de vuelta al spawn de la arena.
-     */
     public void checkRadiusBreach(Player player) {
         if (!isPlaying(player)) return;
 
         Arena arena = playerArenas.get(player.getUniqueId());
         if (arena == null || !arena.hasRadius() || arena.getPlayerSpawn() == null) return;
 
-        Location center = arena.getPlayerSpawn();
+        Location center    = arena.getPlayerSpawn();
         Location playerLoc = player.getLocation();
-
-        // Solo comparar si están en el mismo mundo
         if (!center.getWorld().equals(playerLoc.getWorld())) return;
 
         double distance = center.distance(playerLoc);
         if (distance > arena.getRadius()) {
-            // Teleportar de vuelta al borde del radio (dirección hacia el centro)
             double ratio = (arena.getRadius() - 0.5) / distance;
-            double newX = center.getX() + (playerLoc.getX() - center.getX()) * ratio;
-            double newZ = center.getZ() + (playerLoc.getZ() - center.getZ()) * ratio;
-
             Location pushBack = new Location(
-                    center.getWorld(), newX, playerLoc.getY(), newZ,
+                    center.getWorld(),
+                    center.getX() + (playerLoc.getX() - center.getX()) * ratio,
+                    playerLoc.getY(),
+                    center.getZ() + (playerLoc.getZ() - center.getZ()) * ratio,
                     playerLoc.getYaw(), playerLoc.getPitch());
-
             player.teleport(pushBack);
-            player.sendMessage(plugin.getConfigManager().getMessage("arena-boundary"));
+            player.sendMessage(plugin.getConfigManager().msg("game.out-of-bounds"));
             player.playSound(pushBack, Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
         }
     }
 
     // =========================================================
-    // TIMER
+    // HUNT TIMER
     // =========================================================
 
-    private void startTimer(Player player, int seconds) {
+    private void startHuntTimer(Player player, int seconds) {
         stopTimer(player);
 
-        String bossFormat = plugin.getConfig().getString("messages.bossbar-text", "&eTime: {time}s");
+        String fmt = plugin.getConfigManager().msg("hunt.bossbar", false);
         BossBar bar = Bukkit.createBossBar(
-                ColorUtil.colorize(bossFormat.replace("{time}", String.valueOf(seconds))),
+                ColorUtil.colorize(fmt.replace("{time}", String.valueOf(seconds))),
                 BarColor.YELLOW, BarStyle.SOLID);
         bar.addPlayer(player);
         activeBars.put(player.getUniqueId(), bar);
 
-        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+        BukkitTask task = new BukkitRunnable() {
             double timeLeft = seconds;
-            final double totalTime = seconds;
+            final double total = seconds;
 
             @Override
             public void run() {
-                if (!isPlaying(player)) { stopTimer(player); return; }
+                if (!isPlaying(player)) { stopTimer(player); this.cancel(); return; }
 
-                timeLeft -= 1.0;
-                BossBar currentBar = activeBars.get(player.getUniqueId());
-                if (currentBar != null) {
-                    currentBar.setTitle(ColorUtil.colorize(
-                            bossFormat.replace("{time}", String.valueOf((int) timeLeft))));
-                    double progress = timeLeft / totalTime;
-                    currentBar.setProgress(Math.max(0.0, Math.min(1.0, progress)));
+                timeLeft--;
+                BossBar b = activeBars.get(player.getUniqueId());
+                if (b != null) {
+                    b.setTitle(ColorUtil.colorize(fmt.replace("{time}", String.valueOf((int) timeLeft))));
+                    b.setProgress(Math.max(0.0, Math.min(1.0, timeLeft / total)));
                     if (timeLeft <= 5) {
-                        currentBar.setColor(BarColor.RED);
-                        player.playSound(player.getLocation(),
-                                Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 2f);
+                        b.setColor(BarColor.RED);
+                        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 2f);
                     }
                 }
-
-                if (timeLeft <= 0) handleDefeat(player, null);
+                if (timeLeft <= 0) { this.cancel(); handleDefeat(player, null); }
             }
-        }, 20L, 20L);
+        }.runTaskTimer(plugin, 20L, 20L);
 
         timerTasks.put(player.getUniqueId(), task);
     }
@@ -391,42 +343,48 @@ public class GameManager {
 
         stopTimer(player);
         plugin.getNpcManager().cleanup(player);
+        clearObservationEffects(player);
 
         UUID uuid = player.getUniqueId();
         activePlayers.remove(uuid);
         playerLevels.remove(uuid);
         playerLives.remove(uuid);
         playerArenas.remove(uuid);
-        inObservationPhase.remove(uuid);
+        inObservation.remove(uuid);
 
-        // Limpiar efectos de observación si salió a mitad
-        PotionEffectType slowEffect = PotionEffectType.getByName("SLOWNESS") != null
-                ? PotionEffectType.getByName("SLOWNESS")
-                : PotionEffectType.getByName("SLOW");
-        if (slowEffect != null) player.removePotionEffect(slowEffect);
-        player.removePotionEffect(PotionEffectType.NIGHT_VISION);
+        player.sendMessage(plugin.getConfigManager().msg("game.left"));
 
-        player.sendMessage(plugin.getConfigManager().getMessage("game-left"));
-
-        // ✅ NUEVO: Teleportar al lobby global si está configurado
+        // Teleport to global lobby if set
         if (plugin.getArenaManager().hasGlobalLobby()) {
             Bukkit.getScheduler().runTaskLater(plugin, () ->
                     player.teleport(plugin.getArenaManager().getGlobalLobby()), 2L);
-        } else if (plugin.getConfig().getBoolean("settings.gamemode-management", true)) {
-            // Fallback: solo restaurar gamemode
-            String mode = plugin.getConfig().getString("settings.gamemode-lobby", "SURVIVAL");
-            try { player.setGameMode(GameMode.valueOf(mode)); }
-            catch (Exception e) { player.setGameMode(GameMode.SURVIVAL); }
         }
 
-        // Restaurar gamemode lobby siempre
-        if (plugin.getConfig().getBoolean("settings.gamemode-management", true)) {
-            String mode = plugin.getConfig().getString("settings.gamemode-lobby", "SURVIVAL");
-            try { player.setGameMode(GameMode.valueOf(mode)); }
-            catch (Exception e) { player.setGameMode(GameMode.SURVIVAL); }
-        }
-
+        applyLobbyGameMode(player);
         return true;
+    }
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private void clearObservationEffects(Player player) {
+        if (SLOWNESS != null) player.removePotionEffect(SLOWNESS);
+        player.removePotionEffect(PotionEffectType.NIGHT_VISION);
+    }
+
+    private void applyPlayingGameMode(Player player) {
+        if (!plugin.getConfig().getBoolean("settings.gamemode-management", true)) return;
+        String name = plugin.getConfig().getString("settings.gamemode-playing", "ADVENTURE");
+        try { player.setGameMode(GameMode.valueOf(name)); }
+        catch (IllegalArgumentException e) { player.setGameMode(GameMode.ADVENTURE); }
+    }
+
+    private void applyLobbyGameMode(Player player) {
+        if (!plugin.getConfig().getBoolean("settings.gamemode-management", true)) return;
+        String name = plugin.getConfig().getString("settings.gamemode-lobby", "SURVIVAL");
+        try { player.setGameMode(GameMode.valueOf(name)); }
+        catch (IllegalArgumentException e) { player.setGameMode(GameMode.SURVIVAL); }
     }
 
     public boolean isPlaying(Player player) {
@@ -434,7 +392,7 @@ public class GameManager {
     }
 
     public boolean isInObservationPhase(Player player) {
-        return inObservationPhase.contains(player.getUniqueId());
+        return inObservation.contains(player.getUniqueId());
     }
 
     public void clearAllPlayers() {
