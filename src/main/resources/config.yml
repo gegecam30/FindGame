@@ -1,0 +1,138 @@
+# ========================================
+#    FindGame - Main Configuration
+#    Theme: Find the Impostor
+# ========================================
+
+# -------------------------------------------------------------------------
+# 1. GLOBAL SETTINGS
+# Basic system options and prefixes.
+# -------------------------------------------------------------------------
+settings:
+  # Prefix appearing before every message. "Impostor" style.
+  prefix: "{#DC143C}&l[Impostor]{#B0B0B0} "
+  debug: true
+  max-lives: 3
+
+# -------------------------------------------------------------------------
+# 2. GAME FLOW & MODES
+# -------------------------------------------------------------------------
+  observation-phase: 30
+  judgment-phase: 60
+
+  gamemode-management: true
+  gamemode-playing: ADVENTURE
+  gamemode-lobby: SURVIVAL
+
+# -------------------------------------------------------------------------
+# 3. VISUALS (SKINS)
+# -------------------------------------------------------------------------
+visuals:
+  villager-skins-enabled: true
+  allowed-skins:
+    - "DESERT"
+    - "JUNGLE"
+    - "SWAMP"
+    - "SNOW"
+    - "TAIGA"
+    - "PLAINS"
+
+# -------------------------------------------------------------------------
+# 4. REWARDS
+# -------------------------------------------------------------------------
+rewards:
+  bonus-chance: 20
+  bonus-command: "give %player% diamond 1"
+  win-commands:
+    - "xp add %player% 5 levels"
+    - "give %player% emerald 1"
+    - "tell %player% &6&lExcellent work detective! Here is your reward."
+
+# -------------------------------------------------------------------------
+# 5. MESSAGES (TRANSLATED & STYLIZED)
+# -------------------------------------------------------------------------
+messages:
+  # --- General ---
+  game-joined: "{#32CD32}You have entered the investigation zone."
+  game-left: "{#FF4500}You have left the investigation."
+  already-playing: "{#DC143C}You are already inside a game!"
+  not-playing: "{#DC143C}You are not currently in a game."
+  no-permission: "{#DC143C}⚠ You do not have permission for this command."
+  game-trade-blocked: "{#DC143C}You cannot trade with suspects during judgment."
+
+  # --- Game Cycle ---
+  game-start: "{#00FFFF}The search begins! {#E0E0E0}Level: {#FFD700}{level}"
+  
+  # On-screen Titles
+  level-title: "{#DC143C}&lLEVEL {level}"
+  level-subtitle: "{#E0E0E0}Find the {#DC143C}&lIMPOSTOR"
+
+  # BossBar Configuration
+  bossbar-text: "{#FFFF00}Time Remaining: {#FFFFFF}{time}s"
+
+  # Impostor Hints and Names
+  impostor-hint: "{#B0B0B0}Clue: The suspect seems to be... {#00FFFF}{type}"
+  
+  impostor-names:
+    nervous: "The Nervous One"
+    killer: "The Killer"
+    shy: "The Shy One"
+    speedrunner: "The Speedster"
+
+  # Results
+  game-win: "{#32CD32}CORRECT! {#E0E0E0}You successfully eliminated the impostor."
+  game-lose: "{#DC143C}WRONG! {#E0E0E0}That was an innocent villager. Mission failed."
+  game-win-bonus: "{#FFD700}&lAMAZING! {#FFFFE0}Your deduction was so fast you got a BONUS! 🎉"
+  
+  # Lives
+  game-life-lost: "{#FF8C00}You missed! {#E0E0E0}That was an innocent. {#DC143C}{lives} lives remaining."
+  game-over: "{#8B0000}&lMISSION FAILED! {#E0E0E0}You ran out of lives."
+
+  # --- Help & Commands ---
+  help-header: "{#00FFFF}&m=======&r {#DC143C}&lFIND GAME {#00FFFF}&m======="
+  help-start: "{#FFD700}/findgame start {#B0B0B0}- Start a game"
+  help-leave: "{#FFD700}/findgame leave {#B0B0B0}- Leave current game"
+  help-stats: "{#FFD700}/findgame stats {#B0B0B0}- View your stats"
+  help-top: "{#FFD700}/findgame top {#B0B0B0}- View detective ranking"
+  help-admin-header: "{#FF4500}&m=======&r {#DC143C}ADMIN PANEL {#FF4500}&m======="
+  help-create: "{#FFA500}/findgame create <name> {#B0B0B0}- Create arena"
+  help-delete: "{#FFA500}/findgame delete <name> {#B0B0B0}- Delete arena"
+  help-setspawn: "{#FFA500}/findgame setspawn <name> {#B0B0B0}- Set Spawn"
+  help-addnpc: "{#FFA500}/findgame addnpc <name> {#B0B0B0}- Add NPC (Position)"
+  help-list: "{#FFA500}/findgame list {#B0B0B0}- List arenas"
+  help-save: "{#FFA500}/findgame save {#B0B0B0}- Force save"
+  admin-reload: "{#00FF00}Configuration reloaded successfully."
+
+  # --- Arena Management ---
+  arena-created: "{#32CD32}Arena '{name}' successfully registered."
+  arena-deleted: "{#FF4500}Arena '{name}' removed from database."
+  arena-already-exists: "{#DC143C}Error: Arena '{name}' already exists."
+  arena-not-found: "{#DC143C}Error: Arena '{name}' not found."
+  arena-spawn-set: "{#32CD32}Spawn point set for '{name}'."
+  arena-npc-added: "{#32CD32}NPC #{number} added to arena '{name}'."
+  arena-saved: "{#00FFFF}Configuration saved to disk."
+  
+  arena-list-header: "{#00FFFF}=== Available Arenas ==="
+  arena-list-item: "{#FFD700}➤ {name}: {#E0E0E0}{info}"
+  arena-list-empty: "{#B0B0B0}No arenas currently configured."
+  
+  arena-teleport: "{#00FFFF}Traveling to arena '{name}'..."
+  click-to-tp: "{#AAAAAA}(Click to teleport)"
+
+  # --- Setup Wand ---
+  wand-name: "{#FFA500}Setup Wand: {#FFFF00}{arena}"
+  wand-lore:
+    - "{#B0B0B0}Right click on a block"
+    - "{#B0B0B0}to add an NPC spawn point."
+  
+  wand-set-spawn: "&aPlayer spawn set in &e{name}"
+  wand-success: "{#32CD32}Spawn location #{number} added to arena '{name}'."
+  wand-error: "{#DC143C}Error: The arena '{name}' no longer exists."
+
+  # --- Statistics ---
+  stats-header: "{#00FFFF}&lPLAYER DOSSIER"
+  stats-played: "{#E0E0E0}Cases played: {#00FFFF}{played}"
+  stats-won: "{#E0E0E0}Impostors found: {#32CD32}{won}"
+  stats-winrate: "{#E0E0E0}Efficiency: {#FFD700}{winrate}%"
+  
+  top-header: "{#FFD700}&lTOP 10 BEST DETECTIVES"
+  top-line: "{#FFD700}#{position} {#E0E0E0}{player} - {#32CD32}{wins} wins"

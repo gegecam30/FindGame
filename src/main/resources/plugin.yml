@@ -1,0 +1,17 @@
+name: FindGame
+version: 2.2
+main: com.findgame.FindGamePlugin
+
+api-version: '1.13' 
+description: Minijuego Encuentra al Impostor
+author: _gengis
+softdepend: [PlaceholderAPI]
+permissions:
+  findgame.admin:
+    description: Permisos de administrador
+    default: op
+commands:
+  findgame:
+    description: Comando principal
+    usage: /findgame <start|leave|stats|top|wand>
+    aliases: [fg, findg]

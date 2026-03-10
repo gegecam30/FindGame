@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="maven-antrun-" default="main">
+  <target name="main">
+    <taskdef resource="proguard/ant/task.properties" classpathref="maven.plugin.classpath" />
+    <proguard configuration="proguard.conf">
+      <injar path="target/FindGamePlus-2.2.jar" />
+      <outjar path="target/FindGamePlus-2.2-final.jar" />
+      <libraryjar path="C:\Program Files\Java\jdk-21/jmods/java.base.jmod" />
+      <libraryjar path="C:\Program Files\Java\jdk-21/jmods/java.logging.jmod" />
+    </proguard>
+  </target>
+</project>

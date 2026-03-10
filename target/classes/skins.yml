@@ -1,0 +1,5 @@
+# Lista de skins para los NPCs (Usa nombres de jugadores Premium)
+# El plugin elegirá una al azar para cada NPC generado.
+npc-skins:
+  - "_gengis"
+  - "luipy"
