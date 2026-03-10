@@ -30,6 +30,7 @@ public class GameManager {
     private final Map<UUID, BukkitTask> timerTasks      = new HashMap<>();
     private final Map<UUID, Arena>    playerArenas      = new HashMap<>();
     private final Set<UUID>           inObservation     = new HashSet<>();
+    private final Map<UUID, Long>      boundaryWarnTime  = new HashMap<>();
 
     /** Compatible helper — SLOWNESS was SLOW before 1.20.5 */
     private static final PotionEffectType SLOWNESS;
@@ -275,17 +276,36 @@ public class GameManager {
         if (!center.getWorld().equals(playerLoc.getWorld())) return;
 
         double distance = center.distance(playerLoc);
-        if (distance > arena.getRadius()) {
-            double ratio = (arena.getRadius() - 0.5) / distance;
-            Location pushBack = new Location(
-                    center.getWorld(),
-                    center.getX() + (playerLoc.getX() - center.getX()) * ratio,
-                    playerLoc.getY(),
-                    center.getZ() + (playerLoc.getZ() - center.getZ()) * ratio,
-                    playerLoc.getYaw(), playerLoc.getPitch());
-            player.teleport(pushBack);
+        double radius   = arena.getRadius();
+        if (distance <= radius) return;
+
+        // How far past the boundary the player is (0.0 = just at edge, 1.0 = one full radius beyond)
+        double overflow = (distance - radius) / radius;
+
+        // Direction pointing back toward center
+        org.bukkit.util.Vector toCenter = center.toVector()
+                .subtract(playerLoc.toVector())
+                .normalize();
+
+        // Push strength scales with how far they went past the edge:
+        //   - Just past the line: gentle nudge (0.2)
+        //   - Far past the line: stronger push (capped at 0.8)
+        double strength = Math.min(0.2 + overflow * 1.2, 0.8);
+        org.bukkit.util.Vector push = toCenter.multiply(strength);
+
+        // Keep Y neutral — don't fling the player into the air
+        push.setY(0.05);
+        player.setVelocity(push);
+
+        // Warning message — throttled: only show once every 2 seconds
+        // (PlayerMoveEvent fires every block, so we avoid chat spam)
+        UUID uuid = player.getUniqueId();
+        Long lastWarn = boundaryWarnTime.get(uuid);
+        long now = System.currentTimeMillis();
+        if (lastWarn == null || now - lastWarn > 2000) {
+            boundaryWarnTime.put(uuid, now);
             player.sendMessage(plugin.getConfigManager().msg("game.out-of-bounds"));
-            player.playSound(pushBack, Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
+            player.playSound(playerLoc, Sound.BLOCK_NOTE_BLOCK_BASS, 0.6f, 0.5f);
         }
     }
 
@@ -351,6 +371,7 @@ public class GameManager {
         playerLives.remove(uuid);
         playerArenas.remove(uuid);
         inObservation.remove(uuid);
+        boundaryWarnTime.remove(uuid);
 
         player.sendMessage(plugin.getConfigManager().msg("game.left"));
 
