@@ -119,9 +119,12 @@ public class GameManager {
         int ticks = durationSeconds * 20 + 10; // +10 por margen
 
         // Slowness IV = casi sin movimiento (simula zoom)
+        // SLOW fue renombrado a SLOWNESS en Paper 1.20.5+; usamos getByName para compatibilidad
+        PotionEffectType slowType = PotionEffectType.getByName("SLOWNESS") != null
+                ? PotionEffectType.getByName("SLOWNESS")
+                : PotionEffectType.getByName("SLOW");
         player.addPotionEffect(new PotionEffect(
-                PotionEffectType.SLOW,
-                ticks, 4, false, false, false));
+                slowType, ticks, 4, false, false, false));
 
         // Night Vision para ver bien los aldeanos
         player.addPotionEffect(new PotionEffect(
@@ -149,7 +152,7 @@ public class GameManager {
         activeBars.put(uuid, obsBar);
 
         // Countdown y transición al juego
-        BukkitTask obsTask = Bukkit.getScheduler().runTaskTimer(plugin, new Runnable() {
+        BukkitTask obsTask = new org.bukkit.scheduler.BukkitRunnable() {
             int timeLeft = durationSeconds;
 
             @Override
@@ -178,19 +181,18 @@ public class GameManager {
                 }
 
                 if (timeLeft <= 0) {
-                    // Quitar bossbar de observación
                     if (bar != null) { bar.removeAll(); activeBars.remove(uuid); }
                     inObservationPhase.remove(uuid);
                     this.cancel();
 
                     // Quitar efectos y arrancar ronda real
-                    player.removePotionEffect(PotionEffectType.SLOW);
+                    player.removePotionEffect(slowType);
                     player.removePotionEffect(PotionEffectType.NIGHT_VISION);
 
                     beginHuntPhase(player, arena, level);
                 }
             }
-        }, 20L, 20L);
+        }.runTaskTimer(plugin, 20L, 20L);
 
         timerTasks.put(uuid, obsTask); // guardamos para poder cancelar si sale
     }
@@ -398,7 +400,10 @@ public class GameManager {
         inObservationPhase.remove(uuid);
 
         // Limpiar efectos de observación si salió a mitad
-        player.removePotionEffect(PotionEffectType.SLOW);
+        PotionEffectType slowEffect = PotionEffectType.getByName("SLOWNESS") != null
+                ? PotionEffectType.getByName("SLOWNESS")
+                : PotionEffectType.getByName("SLOW");
+        if (slowEffect != null) player.removePotionEffect(slowEffect);
         player.removePotionEffect(PotionEffectType.NIGHT_VISION);
 
         player.sendMessage(plugin.getConfigManager().getMessage("game-left"));
