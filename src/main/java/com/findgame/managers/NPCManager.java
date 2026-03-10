@@ -3,7 +3,6 @@ package com.findgame.managers;
 import com.findgame.FindGamePlugin;
 import com.findgame.data.ImpostorType;
 import com.findgame.managers.ArenaManager.Arena;
-import com.findgame.utils.ColorUtil;
 import com.findgame.utils.ParticleUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -24,20 +23,33 @@ public class NPCManager {
 
     private final FindGamePlugin plugin;
 
-    private final Map<UUID, List<Entity>>   activeNPCs     = new HashMap<>();
-    private final Map<UUID, Integer>        impostors      = new HashMap<>();
-    private final Map<UUID, BukkitTask>     behaviorTasks  = new HashMap<>();
-    private final Map<UUID, ImpostorType>   impostorTypes  = new HashMap<>();
+    private final Map<UUID, List<Entity>>  activeNPCs    = new HashMap<>();
+    private final Map<UUID, Integer>       impostors     = new HashMap<>();
+    private final Map<UUID, BukkitTask>    behaviorTasks = new HashMap<>();
+    private final Map<UUID, ImpostorType>  impostorTypes = new HashMap<>();
 
-    private static final Villager.Profession[] SAFE_PROFESSIONS = {
+    // ── Appearance pools ──────────────────────────────────────────────────
+
+    private static final Villager.Profession[] PROFESSIONS = {
             Villager.Profession.ARMORER,      Villager.Profession.BUTCHER,
             Villager.Profession.CARTOGRAPHER, Villager.Profession.CLERIC,
             Villager.Profession.FARMER,       Villager.Profession.FISHERMAN,
             Villager.Profession.FLETCHER,     Villager.Profession.LEATHERWORKER,
             Villager.Profession.LIBRARIAN,    Villager.Profession.MASON,
-            Villager.Profession.NITWIT,       Villager.Profession.SHEPHERD,
-            Villager.Profession.TOOLSMITH,    Villager.Profession.WEAPONSMITH
+            Villager.Profession.SHEPHERD,     Villager.Profession.TOOLSMITH,
+            Villager.Profession.WEAPONSMITH
+            // NITWIT excluded: has no trade clothes, too easy to spot
     };
+
+    /** Biome types available across all MC versions we support (1.16+). */
+    private static final String[] SKIN_TYPES = {
+            "plains", "desert", "jungle", "swamp", "snow", "taiga", "savanna"
+    };
+
+    /** Villager levels 1-5 change the badge/belt on their outfit. */
+    private static final int[] LEVELS = { 1, 2, 3, 4, 5 };
+
+    // ─────────────────────────────────────────────────────────────────────
 
     public NPCManager(FindGamePlugin plugin) {
         this.plugin = plugin;
@@ -74,23 +86,31 @@ public class NPCManager {
         int actual = Math.min(count, shuffled.size());
         List<Entity> spawned = new ArrayList<>();
 
-        boolean skinsEnabled = plugin.getConfig().getBoolean("visuals.villager-skins-enabled", true);
-        List<String> allowedSkins = plugin.getConfig().getStringList("visuals.allowed-skins");
+        // Prepare name pool for this round (no repeats if possible)
+        List<String> namePool = buildNamePool(actual);
 
         for (int i = 0; i < actual; i++) {
             Location loc = shuffled.get(i);
             if (!loc.getChunk().isLoaded()) loc.getChunk().load();
 
             Villager npc = (Villager) loc.getWorld().spawnEntity(loc, EntityType.VILLAGER);
-            npc.setAI(true);
             npc.setCollidable(false);
             npc.setSilent(true);
             npc.setAgeLock(true);
-            npc.setProfession(randomProfession());
             npc.setGlowing(true);
+            npc.setAI(true);
 
             if (npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED) != null) {
                 npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED).setBaseValue(0.23);
+            }
+
+            // ✅ Varied appearance: biome skin + profession + level
+            applyRandomAppearance(npc);
+
+            // ✅ Random name from pool
+            if (i < namePool.size()) {
+                npc.setCustomName(namePool.get(i));
+                npc.setCustomNameVisible(true);
             }
 
             // Hide from all other players
@@ -100,97 +120,188 @@ public class NPCManager {
                 }
             }
 
-            if (skinsEnabled && !allowedSkins.isEmpty()) applyRandomSkin(npc, allowedSkins);
             spawned.add(npc);
         }
 
         if (spawned.isEmpty()) return;
 
+        // Pick impostor
         Random random = new Random();
-        Entity impostor = spawned.get(random.nextInt(spawned.size()));
+        Entity impostorEntity = spawned.get(random.nextInt(spawned.size()));
         ImpostorType type = ImpostorType.values()[random.nextInt(ImpostorType.values().length)];
 
         activeNPCs.put(player.getUniqueId(), spawned);
-        impostors.put(player.getUniqueId(), impostor.getEntityId());
+        impostors.put(player.getUniqueId(), impostorEntity.getEntityId());
         impostorTypes.put(player.getUniqueId(), type);
 
-        // Send impostor hint using new message path
+        // Send hint
         String typeName = plugin.getConfigManager().getMessages()
-                .getString("impostor.type-names." + type.name().toLowerCase(), type.name());
+                .getString("impostor.type-names." + type.name().toLowerCase(),
+                        type.getDisplayName());
         player.sendMessage(plugin.getConfigManager().msg("impostor.hint", "type", typeName));
 
-        startImpostorAI(player, (Villager) impostor, type);
+        startImpostorAI(player, (Villager) impostorEntity, type);
     }
 
     // =========================================================
-    // SKIN
+    // ✅ APPEARANCE: biome skin + profession + level
     // =========================================================
 
-    private void applyRandomSkin(Villager npc, List<String> allowed) {
-        String skinName = allowed.get(new Random().nextInt(allowed.size())).toUpperCase();
+    private void applyRandomAppearance(Villager npc) {
+        Random rand = new Random();
+
+        // 1. Biome skin (safe fallback for all versions)
+        String skinKey = SKIN_TYPES[rand.nextInt(SKIN_TYPES.length)];
         try {
-            Villager.Type type = Registry.VILLAGER_TYPE.get(NamespacedKey.minecraft(skinName.toLowerCase()));
-            if (type != null) npc.setVillagerType(type);
-        } catch (Throwable t) {
-            try { npc.setVillagerType(Villager.Type.valueOf(skinName)); }
-            catch (Exception ignored) {}
+            // 1.19.4+ Paper API via Registry
+            Villager.Type type = Registry.VILLAGER_TYPE.get(
+                    NamespacedKey.minecraft(skinKey));
+            if (type != null) {
+                npc.setVillagerType(type);
+            }
+        } catch (Throwable e) {
+            // 1.16–1.19.3 fallback: direct enum lookup
+            try {
+                npc.setVillagerType(Villager.Type.valueOf(skinKey.toUpperCase()));
+            } catch (Exception ignored) { }
         }
+
+        // 2. Random profession (gives different outfit/badge color)
+        npc.setProfession(PROFESSIONS[rand.nextInt(PROFESSIONS.length)]);
+
+        // 3. Random level 1-5 (changes the belt/badge detail on the outfit)
+        npc.setVillagerLevel(LEVELS[rand.nextInt(LEVELS.length)]);
     }
 
     // =========================================================
-    // AI
+    // ✅ NAMES: shuffle list, no repeats within a round
+    // =========================================================
+
+    private List<String> buildNamePool(int needed) {
+        List<String> configured = plugin.getConfigManager().getMessages()
+                .getStringList("npc-names");
+
+        // Fallback names if messages.yml list is empty
+        if (configured.isEmpty()) {
+            configured = Arrays.asList(
+                    "§fAlice", "§fBob", "§fCarlos", "§fDiana", "§fEthan",
+                    "§fFiona", "§fGeorge", "§fHanna", "§fIvan", "§fJulia",
+                    "§fKevin", "§fLena", "§fMarco", "§fNora", "§fOscar"
+            );
+        }
+
+        List<String> pool = new ArrayList<>(configured);
+        Collections.shuffle(pool);
+
+        // If we need more names than available, allow repeats
+        while (pool.size() < needed) {
+            pool.addAll(configured);
+        }
+        return pool.subList(0, needed);
+    }
+
+    // =========================================================
+    // AI DISPATCH
     // =========================================================
 
     private void startImpostorAI(Player player, Villager impostor, ImpostorType type) {
+
+        // SHY requires AI=false so manual movement isn't overridden by pathfinding
+        if (type == ImpostorType.SHY) {
+            impostor.setAI(false);
+        }
+
         BukkitTask task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (impostor == null || impostor.isDead() || !player.isOnline()) {
-                    this.cancel(); return;
+                if (impostor.isDead() || !player.isOnline()) {
+                    this.cancel();
+                    return;
                 }
+
                 Random rand = new Random();
                 int chance = rand.nextInt(100);
 
                 switch (type) {
+
+                    // ── Original types ──────────────────────────────────
+
                     case NERVOUS:
-                        if (chance < 30)       playSweat(impostor);
-                        else if (chance > 80)  playJump(impostor);
-                        else if (chance > 98)  killNearestInnocent(player, impostor, 4.0);
+                        // Sweats often, jumps sometimes, rarely kills
+                        if (chance < 40)      playSweat(impostor);
+                        else if (chance < 65) playJump(impostor);
+                        else if (chance > 97) killNearestInnocent(player, impostor, 4.0);
                         break;
+
                     case KILLER:
-                        if (chance < 10)            playSweat(impostor);
-                        else if (chance > 70)       killNearestInnocent(player, impostor, 8.0);
-                        else if (chance > 50)       lookAtPlayer(player, impostor);
+                        // Stares at player, kills nearby innocents frequently
+                        if (chance < 15)      playSweat(impostor);
+                        else if (chance < 55) lookAtPlayer(player, impostor);
+                        else if (chance > 65) killNearestInnocent(player, impostor, 8.0);
                         break;
+
                     case SHY:
-                        double dist = player.getLocation().distance(impostor.getLocation());
-                        if (dist < 7.0)        runAwayFrom(player, impostor);
-                        else if (chance < 20)  playSweat(impostor);
+                        // ✅ FIXED: AI is off, so we teleport manually each tick
+                        shyStep(player, impostor);
                         break;
+
                     case SPEEDRUNNER:
-                        if (chance < 40)       playSprint(impostor);
-                        else if (chance > 90)  killNearestInnocent(player, impostor, 3.0);
+                        // Frequent speed bursts, rare kills
+                        if (chance < 45)      playSprint(impostor);
+                        else if (chance > 92) killNearestInnocent(player, impostor, 3.0);
+                        break;
+
+                    // ── New types ────────────────────────────────────────
+
+                    case DRUNK:
+                        // Random erratic movement in a random direction
+                        drunkStep(impostor);
+                        if (chance > 85) playSweat(impostor);
+                        break;
+
+                    case PARANOID:
+                        // Always snaps head toward the player, and sweats a lot
+                        lookAtPlayer(player, impostor);
+                        if (chance < 50) playSweat(impostor);
+                        break;
+
+                    case ASSASSIN:
+                        // Kills very frequently, moves toward nearest innocent
+                        if (chance < 60)      killNearestInnocent(player, impostor, 10.0);
+                        else if (chance < 80) lookAtPlayer(player, impostor);
+                        break;
+
+                    case FREEZER:
+                        // Stands completely still — only occasionally twitches
+                        if (chance > 95) {
+                            // Rare subtle twitch: tiny position jitter
+                            freezerTwitch(impostor);
+                        }
                         break;
                 }
             }
-        }.runTaskTimer(plugin, 40L, 20L);
+        }.runTaskTimer(plugin, 20L, 20L);
 
         behaviorTasks.put(player.getUniqueId(), task);
     }
 
     // =========================================================
-    // EFFECTS
+    // EFFECTS & MOVEMENT
     // =========================================================
 
     private void playSweat(Villager npc) {
         if (ParticleUtil.SWEAT != null) {
-            npc.getWorld().spawnParticle(ParticleUtil.SWEAT,
-                    npc.getLocation().add(0, 2.2, 0), 8, 0.3, 0.1, 0.3, 0.01);
+            npc.getWorld().spawnParticle(
+                    ParticleUtil.SWEAT,
+                    npc.getLocation().add(0, 2.2, 0),
+                    8, 0.3, 0.1, 0.3, 0.01);
         }
     }
 
     private void playJump(Villager npc) {
-        if (npc.isOnGround()) npc.setVelocity(new Vector(0, 0.5, 0));
+        if (npc.isOnGround()) {
+            npc.setVelocity(new Vector(0, 0.5, 0));
+        }
     }
 
     private void lookAtPlayer(Player player, Villager npc) {
@@ -201,30 +312,90 @@ public class NPCManager {
         npc.teleport(look);
     }
 
-    private void runAwayFrom(Player player, Villager npc) {
-        Vector dir = npc.getLocation().toVector()
-                .subtract(player.getLocation().toVector()).normalize();
-        npc.setVelocity(dir.multiply(0.7).setY(0.3));
-        Location look = npc.getLocation().clone();
-        look.setDirection(dir);
-        npc.teleport(look);
+    /**
+     * ✅ FIXED SHY: AI is disabled, so we manually teleport the NPC
+     * one small step away from the player every tick.
+     * This guarantees it actually moves — pathfinding can't override it.
+     */
+    private void shyStep(Player player, Villager npc) {
+        Location npcLoc    = npc.getLocation();
+        Location playerLoc = player.getLocation();
+
+        double dist = npcLoc.distance(playerLoc);
+
+        if (dist < 8.0) {
+            // Direction away from player
+            Vector away = npcLoc.toVector()
+                    .subtract(playerLoc.toVector())
+                    .normalize()
+                    .multiply(0.35); // step size per tick
+
+            Location next = npcLoc.clone().add(away.getX(), 0, away.getZ());
+            next.setY(npcLoc.getY()); // keep on ground
+
+            // Face away from player
+            next.setDirection(away);
+            npc.teleport(next);
+
+            // Sweat when very close (panicking)
+            if (dist < 4.0) playSweat(npc);
+        } else {
+            // Player is far — stand still and face them suspiciously
+            lookAtPlayer(player, npc);
+        }
     }
 
     private void playSprint(Villager npc) {
         if (npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED) == null) return;
         npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED).setBaseValue(0.6);
         if (ParticleUtil.CLOUD != null) {
-            npc.getWorld().spawnParticle(ParticleUtil.CLOUD,
+            npc.getWorld().spawnParticle(
+                    ParticleUtil.CLOUD,
                     npc.getLocation(), 5, 0.2, 0.1, 0.2, 0.05);
         }
         new BukkitRunnable() {
             @Override public void run() {
-                if (!npc.isDead()) {
-                    Objects.requireNonNull(npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED))
-                            .setBaseValue(0.23);
+                if (!npc.isDead() && npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED) != null) {
+                    npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED).setBaseValue(0.23);
                 }
             }
         }.runTaskLater(plugin, 40L);
+    }
+
+    /**
+     * DRUNK: teleports the NPC a small random step in a random XZ direction.
+     * AI stays on so it also pathfinds, making movement look chaotic.
+     */
+    private void drunkStep(Villager npc) {
+        Random rand = new Random();
+        // Random angle, short step
+        double angle  = rand.nextDouble() * 2 * Math.PI;
+        double step   = 0.3 + rand.nextDouble() * 0.5;
+        double dx     = Math.cos(angle) * step;
+        double dz     = Math.sin(angle) * step;
+
+        Location next = npc.getLocation().clone().add(dx, 0, dz);
+        next.setDirection(new Vector(dx, 0, dz));
+        npc.teleport(next);
+
+        // Randomly change speed to stagger movement
+        if (npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED) != null) {
+            double speed = 0.1 + rand.nextDouble() * 0.4;
+            npc.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED).setBaseValue(speed);
+        }
+    }
+
+    /**
+     * FREEZER: rare subtle twitch — tiny position jitter so it's not 100% a statue.
+     */
+    private void freezerTwitch(Villager npc) {
+        Random rand = new Random();
+        double jitter = 0.05;
+        Location twitch = npc.getLocation().clone()
+                .add((rand.nextDouble() - 0.5) * jitter,
+                        0,
+                        (rand.nextDouble() - 0.5) * jitter);
+        npc.teleport(twitch);
     }
 
     private void killNearestInnocent(Player player, Villager impostor, double range) {
@@ -241,10 +412,13 @@ public class NPCManager {
 
         if (victim != null) {
             if (ParticleUtil.DEATH_POOF != null) {
-                victim.getWorld().spawnParticle(ParticleUtil.DEATH_POOF,
-                        victim.getLocation().add(0, 1, 0), 15, 0.2, 0.2, 0.2, 0.05);
+                victim.getWorld().spawnParticle(
+                        ParticleUtil.DEATH_POOF,
+                        victim.getLocation().add(0, 1, 0),
+                        15, 0.2, 0.2, 0.2, 0.05);
             }
-            victim.getWorld().playSound(victim.getLocation(),
+            victim.getWorld().playSound(
+                    victim.getLocation(),
                     org.bukkit.Sound.ENTITY_PLAYER_ATTACK_CRIT, 1f, 0.8f);
             victim.remove();
         }
@@ -256,11 +430,23 @@ public class NPCManager {
 
     public void cleanup(Player player) {
         UUID id = player.getUniqueId();
-        if (behaviorTasks.containsKey(id)) { behaviorTasks.get(id).cancel(); behaviorTasks.remove(id); }
+
+        if (behaviorTasks.containsKey(id)) {
+            behaviorTasks.get(id).cancel();
+            behaviorTasks.remove(id);
+        }
+
         if (activeNPCs.containsKey(id)) {
-            for (Entity e : activeNPCs.get(id)) if (e != null && !e.isDead()) e.remove();
+            for (Entity e : activeNPCs.get(id)) {
+                if (e != null && !e.isDead()) {
+                    // Re-enable AI before removing (good practice)
+                    if (e instanceof Villager) ((Villager) e).setAI(true);
+                    e.remove();
+                }
+            }
             activeNPCs.remove(id);
         }
+
         impostors.remove(id);
         impostorTypes.remove(id);
     }
@@ -268,8 +454,15 @@ public class NPCManager {
     public void cleanupAll() {
         for (BukkitTask t : behaviorTasks.values()) t.cancel();
         behaviorTasks.clear();
-        for (List<Entity> list : activeNPCs.values())
-            for (Entity e : list) if (e != null && !e.isDead()) e.remove();
+
+        for (List<Entity> list : activeNPCs.values()) {
+            for (Entity e : list) {
+                if (e != null && !e.isDead()) {
+                    if (e instanceof Villager) ((Villager) e).setAI(true);
+                    e.remove();
+                }
+            }
+        }
         activeNPCs.clear();
         impostors.clear();
         impostorTypes.clear();
@@ -286,9 +479,5 @@ public class NPCManager {
     public boolean isGameNPC(Player player, Entity entity) {
         List<Entity> list = activeNPCs.get(player.getUniqueId());
         return list != null && list.contains(entity);
-    }
-
-    private Villager.Profession randomProfession() {
-        return SAFE_PROFESSIONS[new Random().nextInt(SAFE_PROFESSIONS.length)];
     }
 }
