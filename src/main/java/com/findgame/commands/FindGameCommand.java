@@ -91,7 +91,7 @@ public class FindGameCommand implements CommandExecutor, TabCompleter {
                     player.sendMessage(plugin.getConfigManager().getMessage("arena-list-empty"));
                 } else {
                     for (String name : arenas) {
-                        var arena = plugin.getArenaManager().getArena(name);
+                        com.findgame.managers.ArenaManager.Arena arena = plugin.getArenaManager().getArena(name);
                         int npcs = arena.getNpcSpawns().size();
                         String radius = arena.hasRadius()
                                 ? " &7| &eRadio: &f" + (int) arena.getRadius() + "b" : "";
